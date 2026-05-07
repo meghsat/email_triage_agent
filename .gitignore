@@ -1,0 +1,26 @@
+# OAuth tokens and credentials
+gmail_token.json
+calendar_token.json
+credentials.json
+
+# Environment
+.env
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
