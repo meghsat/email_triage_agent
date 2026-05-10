@@ -19,6 +19,8 @@ class CalendarEvent(BaseModel):
     link: str
     attendees: list[str] = Field(default_factory=list)
     is_all_day: bool = False
+    account_email: str = ""
+    account_label: str = ""
 
     @property
     def duration_str(self) -> str:
@@ -43,10 +45,13 @@ class CalendarEvent(BaseModel):
 
 
 class CalendarClient:
-    def __init__(self, credentials_file: str, token_file: str, scopes: list[str]):
+    def __init__(self, credentials_file: str, token_file: str, scopes: list[str],
+                 account_email: str = "", account_label: str = ""):
         self.credentials_file = Path(credentials_file)
         self.token_file = Path(token_file)
         self.scopes = scopes
+        self.account_email = account_email
+        self.account_label = account_label
         self._service = None
         try:
             import tzlocal
@@ -117,7 +122,9 @@ class CalendarClient:
                     description=event.get('description'),
                     link=event.get('htmlLink', ''),
                     attendees=attendees,
-                    is_all_day=is_all_day
+                    is_all_day=is_all_day,
+                    account_email=self.account_email,
+                    account_label=self.account_label
                 ))
             except Exception as e:
                 print(f"Error parsing event {event.get('id')}: {e}")

@@ -19,6 +19,9 @@ class Email(BaseModel):
     link: str
     labels: list[str] = Field(default_factory=list)
     is_unread: bool = False
+    account_email: str = ""  # Source account identifier
+    account_label: str = ""  # Display label (e.g., "Work", "Personal")
+    account_index: int = 0   # Gmail u/X account index
 
     @property
     def date_str(self) -> str:
@@ -26,10 +29,14 @@ class Email(BaseModel):
 
 
 class GmailClient:
-    def __init__(self, credentials_file: str, token_file: str, scopes: list[str]):
+    def __init__(self, credentials_file: str, token_file: str, scopes: list[str],
+                 account_email: str = "", account_label: str = "", account_index: int = 0):
         self.credentials_file = Path(credentials_file)
         self.token_file = Path(token_file)
         self.scopes = scopes
+        self.account_email = account_email
+        self.account_label = account_label
+        self.account_index = account_index
         self._service = None
 
     @property
@@ -88,9 +95,12 @@ class GmailClient:
                     sender=self._parse_sender(headers.get('From', '')),
                     date=self._parse_date(headers.get('Date', '')),
                     snippet=msg.get('snippet', ''),
-                    link=f"https://mail.google.com/mail/u/0/#inbox/{msg['id']}",
+                    link=f"https://mail.google.com/mail/u/{self.account_index}/#inbox/{msg['id']}",
                     labels=msg.get('labelIds', []),
-                    is_unread='UNREAD' in msg.get('labelIds', [])
+                    is_unread='UNREAD' in msg.get('labelIds', []),
+                    account_email=self.account_email,
+                    account_label=self.account_label,
+                    account_index=self.account_index
                 ))
             except Exception as e:
                 print(f"Error fetching email {msg_ref['id']}: {e}")

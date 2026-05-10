@@ -1,144 +1,340 @@
 # Personal Triage Agent
 
-An intelligent email and calendar triage system that uses a local LLM (via Lemonade server) to analyze your emails and calendar events, providing a clean dashboard with actionable insights.
+An intelligent email and calendar triage system that uses a local LLM via Lemonade Server to analyze your emails and calendar events, then presents actionable insights in a clean Streamlit dashboard.
 
 ## Features
 
-- **Email Analysis**: Fetch and analyze emails from the last 24 hours
-- **Local LLM Processing**: Uses your Lemonade server for privacy and offline analysis
-- **Smart Categorization**: Automatically categorizes emails (work, personal, newsletters, promotions, etc.)
-- **Action Items**: Highlights emails requiring your response
-- **Calendar Integration**: Shows today's events with time-until countdown
-- **Auto-refresh**: Automatically updates every 20 minutes
+- Analyze emails from the last 24 hours
+- Local LLM processing for privacy and offline usage
+- Automatic email categorization:
+  - Work
+  - Personal
+  - Newsletters
+  - Promotions
+  - Alerts
+- Detect emails that require a response
+- Display today's calendar events with countdowns
+- Auto-refresh dashboard every 20 minutes
+- Direct links to Gmail and Google Calendar
 
-## Prerequisites
+---
 
-- **Python 3.9+**
-- **Lemonade server** running on port 13305
-- **Google Cloud Project** with Gmail & Calendar APIs enabled
+# Requirements
 
-## Setup Instructions
+- Python 3.9+
+- Google Cloud Project with:
+  - Gmail API enabled
+  - Google Calendar API enabled
+- Lemonade Server running locally
 
-### 1. Install Dependencies
+---
+
+# Installing Lemonade Server
+
+This project uses Lemonade Server as the local LLM backend.
+
+Installation instructions:
+
+https://lemonade-server.ai/
+
+After installation, verify the server is running:
 
 ```bash
-cd C:\Users\sdevinen\Downloads\projects\agents\triage\personal_triage_agent
+lemonade status
+```
+
+By default, this project expects Lemonade Server at:
+
+```text
+http://localhost:13305/v1
+```
+
+---
+
+# Project Setup
+
+## 1. Clone the Repository
+
+```bash
+git clone <your-repo-url>
+cd personal_triage_agent
+```
+
+---
+
+## 2. Install Dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
-### 2. Configure Google Cloud Project
+---
 
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project (or select existing)
-3. Enable APIs:
-   - Gmail API
-   - Google Calendar API
-4. Create OAuth 2.0 credentials:
-   - Go to "Credentials" → "Create Credentials" → "OAuth client ID"
-   - Application type: "Desktop app"
-   - Download the credentials as `credentials.json`
-5. Place `credentials.json` in the project directory
+## 3. Configure Google Cloud
 
+## Step 1: Create or Select a Google Cloud Project
 
-More:
-Complete OAuth 2.0 Setup Guide
-Step 1: Create/Access Google Cloud Project
-1. Visit: https://console.cloud.google.com/
-2. Click the project dropdown at the top and "New Project"
-Step 2: Enable Required APIs
-Navigate to APIs & Services:
-1. In the left sidebar, click "APIs & Services" → "Enabled APIs & services"
-2. Search for Gmail and Calendar APIs and enable them.
-Step 3: Configure OAuth Consent Screen
-1. Left sidebar: "APIs & Services" → "OAuth consent screen"
-2. Give a name, enter your account's email, choose "External", save, and create
-3. Left sidebar: "Data access" -> Add or remove scopes. In the filter bar, search for these 2 and save
-   .../auth/gmail.readonly (Read-only Gmail access)
-   .../auth/calendar.readonly (Read-only Calendar access)
-Step 4: Create OAuth 2.0 Credentials
-1. Left sidebar: "APIs & Services" → "Credentials"
-2. Click "+ CREATE CREDENTIALS" at the top, Select "OAuth client ID"
-3. Configure the OAuth client:
-   Application type: Select "Desktop app"
-   Name: "Personal Triage Desktop Client" (or any name you prefer)
-   Click "CREATE"
-4. Download JSON in the pop-up
-Step 5: Setup Credentials File
-1. The file will be named something like client_secret_XXXXX.json
-2. Rename it to: credentials.json and move it to your project directory:
+1. Open:
+   https://console.cloud.google.com/
+2. Create a new project or select an existing one
 
+---
 
-# Move the file to your project folder
-mv ~/Downloads/credentials.json "C:\Users\sdevinen\Downloads\projects\agents\triage\personal_triage_agent\credentials.json"
-Or manually copy/paste it into:
-C:\Users\sdevinen\Downloads\projects\agents\triage\personal_triage_agent\
+## Step 2: Enable Required APIs
 
-### 3. Configure Environment
+Navigate to:
 
-The `.env` file is already created with defaults:
+```text
+APIs & Services → Enabled APIs & services
+```
+
+Enable:
+
+- Gmail API
+- Google Calendar API
+
+---
+
+## Step 3: Configure OAuth Consent Screen
+
+Navigate to:
+
+```text
+APIs & Services → OAuth consent screen
+```
+
+Configuration:
+
+- User Type: External
+- App Name: Any name you prefer
+- Support Email: Your Google account email
+
+Save and continue.
+
+---
+
+## Step 4: Add Test User
+
+Navigate to:
+
+```text
+APIs & Services → OAuth consent screen → Audience
+```
+
+Add your email under the test users, save, and continue.
+
+---
+
+## Step 5: Add Required OAuth Scopes
+
+Navigate to:
+
+```text
+APIs & Services → OAuth consent screen → Data Access
+```
+
+Add these scopes:
+
+```text
+.../auth/gmail.readonly
+.../auth/calendar.readonly
+```
+
+These provide read-only access to Gmail and Calendar.
+
+---
+
+## Step 6: Create OAuth Credentials
+
+Navigate to:
+
+```text
+APIs & Services → Credentials
+```
+
+Create credentials:
+
+1. Click:
+   ```text
+   + CREATE CREDENTIALS
+   ```
+2. Select:
+   ```text
+   OAuth client ID
+   ```
+3. Application type:
+   ```text
+   Desktop app
+   ```
+4. Name:
+   ```text
+   Personal Triage Desktop Client
+   ```
+
+Download the generated JSON file.
+
+---
+
+## 4. Add Credentials File
+
+Rename the downloaded file to:
+
+```text
+credentials_{i}.json
+```
+
+Place it in the project root directory:
+
+```text
+personal_triage_agent/
+│
+├── credentials_{i}.json
+├── dashboard.py
+├── requirements.txt
+└── ...
+```
+
+## 5. Add account details - accounts.json
+
+Create this file in your project root depending on the number of emails you want to track:
+
+```json
+{
+  "accounts": [
+    {
+      "label": "personal_1",
+      "email": "@gmail.com",
+      "credentials_file": "credentials_1.json",
+      "enabled": true
+    },
+    {
+      "label": "personal_2",
+      "email": "@gmail.com",
+      "credentials_file": "credentials_2.json",
+      "enabled": true
+    }
+  ]
+}
+
+---
+
+# Environment Configuration
+
+Create a `.env` file in the project root:
 
 ```env
 LEMONADE_SERVER_URL=http://localhost:13305/v1
 LEMONADE_MODEL=user.Llama-3.2-3B-Instruct-GGUF
 ```
 
-Modify if your Lemonade server is on a different port or you want to use a different model.
+Modify these values if:
 
-### 4. Verify Lemonade Server
+- Your Lemonade Server runs on another port
+- You want to use a different model
 
-Check that your Lemonade server is running:
+---
 
-```bash
-lemonade status
-```
+# Running the Dashboard
 
-You should see output showing the server is running on port 13305.
-
-### 5. First Run - OAuth Authentication
-
-The first time you run the dashboard, it will open a browser window for OAuth authentication:
+Start the Streamlit app:
 
 ```bash
 streamlit run dashboard.py
 ```
 
-1. Browser opens automatically for Gmail OAuth → Sign in and authorize
-2. Browser opens again for Calendar OAuth → Sign in and authorize
-3. Tokens are saved to `gmail_token.json` and `calendar_token.json`
-4. Future runs will use these tokens (auto-refreshed when needed)
+The dashboard will open at:
 
-## Running the Dashboard
-
-```bash
-streamlit run dashboard.py
+```text
+http://localhost:8501
 ```
 
-The dashboard will open in your browser at: `http://localhost:8501`
+---
 
-## Dashboard Sections
+# First Run Authentication
 
-### Email Summary
-- Total emails, unread count, urgent count
-- LLM-generated summary of main topics
-- Categorized emails (expandable sections)
-- View all emails option
+On first launch:
 
-### Emails Needing Response
-- Emails identified by LLM as requiring action
-- Direct links to open in Gmail
-- Sender and timestamp info
+1. A browser window opens for Gmail OAuth
+2. Sign in and approve access
+3. A second browser window opens for Calendar OAuth
+4. Sign in and approve access
 
-### Today's Calendar
-- All events for today
-- Time-until countdown for upcoming events
-- Location and attendee information
-- Direct links to Google Calendar
+Generated token files:
 
-## Configuration
+```text
+gmail_token.json
+calendar_token.json
+```
 
-Edit `config.py` or `.env` to customize:
+These tokens are reused automatically and refreshed when needed.
 
-- `email_lookback_hours`: How many hours of email history to fetch (default: 24)
-- `refresh_interval_minutes`: Auto-refresh interval (default: 20)
-- `lemonade_server_url`: Your Lemonade server endpoint
-- `lemonade_model`: Model name to use for analysis
+---
+
+# Dashboard Overview
+
+## Email Summary
+
+Displays:
+
+- Total email count
+- Unread emails
+- Urgent emails
+- AI-generated summaries
+- Categorized email sections
+
+---
+
+## Emails Requiring Response
+
+Highlights emails likely needing action:
+
+- Sender information
+- Timestamp
+- Direct Gmail links
+
+---
+
+## Today's Calendar
+
+Displays:
+
+- Upcoming events
+- Countdown until each event
+- Location information
+- Attendees
+- Direct Google Calendar links
+
+---
+
+# Configuration Options
+
+You can customize settings in `config.py` or `.env`.
+
+Available settings:
+
+| Setting | Description | Default |
+|---|---|---|
+| `email_lookback_hours` | Hours of email history to analyze | `24` |
+| `refresh_interval_minutes` | Dashboard refresh interval | `20` |
+| `lemonade_server_url` | Lemonade API endpoint | `http://localhost:13305/v1` |
+| `lemonade_model` | Model used for analysis | `user.Llama-3.2-3B-Instruct-GGUF` |
+
+---
+
+# Tech Stack
+
+- Python
+- Streamlit
+- Gmail API
+- Google Calendar API
+- Lemonade Server
+- Local LLM inference
+
+---
+
+# Security and Privacy
+
+- Email and calendar analysis runs locally through Lemonade Server
+- No external LLM APIs required
+- OAuth tokens remain on your machine
+- Read-only Gmail and Calendar access

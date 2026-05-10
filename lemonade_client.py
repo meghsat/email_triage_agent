@@ -56,7 +56,7 @@ class LemonadeClient:
                 urgent_count=0
             )
 
-        chunk_size = 10
+        chunk_size = settings.llm_chunk_size
         chunks = [emails[i:i + chunk_size] for i in range(0, len(emails), chunk_size)]
 
         print(f"Analyzing {len(emails)} emails in {len(chunks)} chunks...")
@@ -140,7 +140,8 @@ class LemonadeClient:
                 "from": email.sender,
                 "subject": email.subject,
                 "snippet": email.snippet,
-                "is_unread": email.is_unread
+                "is_unread": email.is_unread,
+                "account": email.account_label if email.account_label else "Primary"  # Account context
             })
 
         prompt = self._build_analysis_prompt(email_data)
@@ -174,6 +175,13 @@ class LemonadeClient:
                 content = content.split("```")[1].split("```")[0].strip()
 
             result = json.loads(content)
+
+            # Truncate subjects to max 5 items per category (LLM sometimes returns more)
+            if 'categories' in result:
+                for category in result['categories']:
+                    if 'subjects' in category and len(category['subjects']) > 5:
+                        category['subjects'] = category['subjects'][:5]
+
             return EmailAnalysis(**result)
 
         except Exception as e:
@@ -208,9 +216,10 @@ Return ONLY valid JSON with this structure:
   "urgent_count": 1
 }}
 
-Important:
+CRITICAL RULES:
 - Only include email IDs in needs_response_ids if they clearly require user action
-- List top 5 subjects per category
+- Each category MUST have EXACTLY 5 subjects or fewer (never more than 5)
+- If a category has more than 5 emails, pick the 5 most representative subjects
 - Be conservative with "urgent" classification
 - Make the summary detailed and informative (5-6 full sentences)"""
 

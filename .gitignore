@@ -1,7 +1,8 @@
 # OAuth tokens and credentials
 gmail_token.json
 calendar_token.json
-credentials.json
+credentials*
+personal*
 
 # Environment
 .env
@@ -24,3 +25,4 @@ env/
 # OS
 .DS_Store
 Thumbs.db
+accounts.json

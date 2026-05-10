@@ -66,36 +66,119 @@ def main():
 
     st.caption(f"Last updated: {result.last_updated.strftime('%B %d, %Y at %I:%M %p')}")
 
+    # Extract unique accounts for filtering
+    account_emails = set()
+    account_labels = {}
+
+    for email in result.emails:
+        if email.account_email:
+            account_emails.add(email.account_email)
+            account_labels[email.account_email] = email.account_label
+
+    for event in result.calendar_events:
+        if event.account_email:
+            account_emails.add(event.account_email)
+            account_labels[event.account_email] = event.account_label
+
+    # Initialize filtered data
+    selected_account = None
+    filtered_emails = result.emails
+    filtered_events = result.calendar_events
+
+    # Show account filter if multiple accounts
+    if len(account_emails) > 1:
+        st.subheader("Filter by Account")
+        all_accounts = ["All Accounts"] + [
+            f"{account_labels.get(email, email)} ({email})"
+            for email in sorted(account_emails)
+        ]
+
+        selected_display = st.selectbox(
+            "Select Account",
+            all_accounts,
+            key="account_filter"
+        )
+
+        if selected_display != "All Accounts":
+            selected_account = selected_display.split("(")[1].rstrip(")")
+            filtered_emails = [
+                e for e in result.emails
+                if e.account_email == selected_account
+            ]
+            filtered_events = [
+                ev for ev in result.calendar_events
+                if ev.account_email == selected_account
+            ]
+
     st.divider()
 
     st.header("Email Summary (Last 24 Hours)")
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("Total Emails", len(result.emails))
+        st.metric("Total Emails", len(filtered_emails))
     with col2:
-        unread_count = sum(1 for e in result.emails if e.is_unread)
+        unread_count = sum(1 for e in filtered_emails if e.is_unread)
         st.metric("Unread", unread_count)
     with col3:
         urgent_count = result.analysis.urgent_count if result.analysis else 0
         st.metric("Urgent", urgent_count, delta_color="inverse")
+    with col4:
+        if len(account_emails) > 1:
+            st.metric("Accounts", len(account_emails))
 
     if result.analysis:
-        st.write("**Overview:**")
-        st.info(result.analysis.summary)
+        # Filter analysis based on filtered emails
+        filtered_subjects = {email.subject for email in filtered_emails}
 
+        # Filter categories to only include subjects from filtered emails
+        filtered_categories = []
         if result.analysis.categories:
-            st.write("**Categories:**")
             for cat in result.analysis.categories:
-                with st.expander(f"📁 {cat.name.title()} ({cat.count})"):
+                matching_subjects = [s for s in cat.subjects if s in filtered_subjects]
+                if matching_subjects:
+                    from lemonade_client import EmailCategory
+                    filtered_cat = EmailCategory(
+                        name=cat.name,
+                        count=len(matching_subjects),
+                        subjects=matching_subjects
+                    )
+                    filtered_categories.append(filtered_cat)
+
+        # Recalculate urgent count for filtered emails
+        filtered_urgent_count = sum(
+            1 for cat in filtered_categories
+            if cat.name.lower() in ['urgent', 'time-sensitive', 'action required']
+        )
+
+        st.write("**Overview:**")
+        if selected_account:
+            # Show filtered summary
+            if filtered_categories:
+                category_summary = ", ".join([f"{cat.count} {cat.name}" for cat in filtered_categories[:3]])
+                st.info(f"Showing {len(filtered_emails)} emails from {account_labels.get(selected_account, selected_account)}: {category_summary}")
+            else:
+                st.info(f"Showing {len(filtered_emails)} emails from {account_labels.get(selected_account, selected_account)}")
+        else:
+            st.info(result.analysis.summary)
+
+        if filtered_categories:
+            st.write("**Categories:**")
+            for cat in filtered_categories:
+                with st.expander(f"{cat.name.title()} ({cat.count})"):
                     for subject in cat.subjects:
                         st.markdown(f"- {subject}")
 
-    with st.expander(f"📬 View All {len(result.emails)} Emails"):
-        for email in result.emails:
+    with st.expander(f"View All {len(filtered_emails)} Emails"):
+        for email in filtered_emails:
+            # Add account badge if multi-account
+            account_badge = ""
+            if len(account_emails) > 1 and email.account_label:
+                account_badge = f"**[{email.account_label}]** "
+
             unread_badge = "🟦 " if email.is_unread else ""
             st.markdown(f"""
-            **{unread_badge}{email.subject}**
+            {account_badge}**{unread_badge}{email.subject}**
             From: {email.sender} | {email.date_str}
             {email.snippet[:150]}...
             [Open in Gmail]({email.link})
@@ -106,15 +189,27 @@ def main():
 
     st.header("Emails Needing Response")
 
-    if not result.emails_needing_response:
+    if selected_account:
+        filtered_response_emails = [
+            e for e in result.emails_needing_response
+            if e.account_email == selected_account
+        ]
+    else:
+        filtered_response_emails = result.emails_needing_response
+
+    if not filtered_response_emails:
         st.success("No emails requiring your response right now!")
     else:
-        st.warning(f"{len(result.emails_needing_response)} email(s) need your attention")
+        st.warning(f"{len(filtered_response_emails)} email(s) need your attention")
 
-        for i, email in enumerate(result.emails_needing_response, 1):
+        for i, email in enumerate(filtered_response_emails, 1):
+            account_info = ""
+            if len(account_emails) > 1 and email.account_label:
+                account_info = f"<span style='background-color: #fff3cd; padding: 2px 6px; border-radius: 3px;'>{email.account_label}</span> "
+
             st.markdown(f"""
             <div class="email-card">
-                <strong>{i}. {email.subject}</strong><br>
+                {account_info}<strong>{i}. {email.subject}</strong><br>
                 <small>From: {email.sender} | {email.date_str}</small><br>
                 {email.snippet}<br>
                 <a href="{email.link}" target="_blank">📧 Open in Gmail</a>
@@ -125,17 +220,21 @@ def main():
 
     st.header("Today's Calendar")
 
-    if not result.calendar_events:
+    if not filtered_events:
         st.info("No events scheduled for today.")
     else:
-        st.write(f"**{len(result.calendar_events)} event(s) today:**")
+        st.write(f"**{len(filtered_events)} event(s) today:**")
 
-        for event in result.calendar_events:
+        for event in filtered_events:
             status_emoji = "🔴" if "In progress" in event.time_until else "🟢"
+
+            account_badge = ""
+            if len(account_emails) > 1 and event.account_label:
+                account_badge = f"<span style='background:#e3f2fd;padding:2px 6px;border-radius:3px;font-size:0.85em;'>{event.account_label}</span> "
 
             st.markdown(f"""
             <div class="event-card">
-                {status_emoji} <strong>{event.summary}</strong>
+                {account_badge}{status_emoji} <strong>{event.summary}</strong>
                 <span style="float: right; color: #666;">{event.time_until}</span><br>
                 <small>{event.duration_str}</small><br>
                 {f'<small>{event.location}</small><br>' if event.location else ''}

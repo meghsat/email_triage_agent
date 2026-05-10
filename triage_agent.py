@@ -3,8 +3,9 @@ from datetime import datetime
 from typing import Optional
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 
-from config import settings
+from config import settings, AccountsConfig
 from gmail_client import GmailClient, Email
 from calendar_client import CalendarClient, CalendarEvent
 from lemonade_client import LemonadeClient, EmailAnalysis
@@ -24,70 +25,124 @@ class TriageResult(BaseModel):
 
 class TriageAgent:
     def __init__(self):
-        self.gmail = GmailClient(
-            credentials_file=settings.credentials_file,
-            token_file=settings.gmail_token_file,
-            scopes=settings.gmail_scopes
-        )
-        self.calendar = CalendarClient(
-            credentials_file=settings.credentials_file,
-            token_file=settings.calendar_token_file,
-            scopes=settings.calendar_scopes
-        )
+        # Load accounts configuration (mandatory)
+        self.accounts_config = AccountsConfig.from_file(settings.accounts_config_file)
+        self.enabled_accounts = self.accounts_config.get_enabled_accounts()
+
+        # Ensure tokens directory exists
+        Path("tokens").mkdir(exist_ok=True)
+
+        # Create client pairs for each account
+        self.gmail_clients = []
+        self.calendar_clients = []
+
+        for idx, account in enumerate(self.enabled_accounts):
+            gmail_client = GmailClient(
+                credentials_file=account.credentials_file,
+                token_file=account.get_gmail_token_path(),
+                scopes=settings.gmail_scopes,
+                account_email=account.email,
+                account_label=account.label,
+                account_index=account.get_gmail_account_index(idx)
+            )
+
+            calendar_client = CalendarClient(
+                credentials_file=account.credentials_file,
+                token_file=account.get_calendar_token_path(),
+                scopes=settings.calendar_scopes,
+                account_email=account.email,
+                account_label=account.label
+            )
+
+            self.gmail_clients.append(gmail_client)
+            self.calendar_clients.append(calendar_client)
+
         self.llm = LemonadeClient()
 
     async def run_triage(self) -> TriageResult:
         errors = []
+        all_emails = []
+        all_events = []
 
-        with ThreadPoolExecutor(max_workers=2) as executor:
-            email_future = executor.submit(self._fetch_emails)
-            calendar_future = executor.submit(self._fetch_calendar)
+        num_accounts = len(self.enabled_accounts)
+        max_workers = min(num_accounts * 2, 10)  # Cap at 10 parallel tasks
 
-            emails = await asyncio.wrap_future(email_future)
-            events = await asyncio.wrap_future(calendar_future)
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = []
 
-        emails_data, email_error = emails
-        events_data, calendar_error = events
+            # Submit all fetch tasks
+            for idx, account in enumerate(self.enabled_accounts):
+                email_future = executor.submit(
+                    self._fetch_emails_for_account,
+                    self.gmail_clients[idx],
+                    account.email
+                )
+                calendar_future = executor.submit(
+                    self._fetch_calendar_for_account,
+                    self.calendar_clients[idx],
+                    account.email
+                )
+                futures.append(('email', account.email, email_future))
+                futures.append(('calendar', account.email, calendar_future))
 
-        if email_error:
-            errors.append(f"Gmail: {email_error}")
-        if calendar_error:
-            errors.append(f"Calendar: {calendar_error}")
+            # Collect results
+            for fetch_type, account_email, future in futures:
+                result = await asyncio.wrap_future(future)
+                data, error = result
 
+                if error:
+                    errors.append(f"{account_email} {fetch_type}: {error}")
+                elif data:
+                    if fetch_type == 'email':
+                        all_emails.extend(data)
+                    else:
+                        all_events.extend(data)
+
+        # LLM analysis on combined emails from all accounts
         analysis = None
         emails_needing_response = []
 
-        if emails_data:
+        if all_emails:
             try:
-                analysis = self.llm.analyze_emails(emails_data)
+                analysis = self.llm.analyze_emails(all_emails)
 
                 response_ids = set(analysis.needs_response_ids)
                 emails_needing_response = [
-                    email for email in emails_data
+                    email for email in all_emails
                     if email.message_id in response_ids
                 ]
             except Exception as e:
                 errors.append(f"LLM: {str(e)}")
 
         return TriageResult(
-            emails=emails_data or [],
+            emails=all_emails,
             analysis=analysis,
             emails_needing_response=emails_needing_response,
-            calendar_events=events_data or [],
+            calendar_events=all_events,
             last_updated=datetime.now(),
             errors=errors
         )
 
-    def _fetch_emails(self) -> tuple[Optional[list[Email]], Optional[str]]:
+    def _fetch_emails_for_account(
+        self,
+        client: GmailClient,
+        account_email: str
+    ) -> tuple[Optional[list[Email]], Optional[str]]:
+        """Fetch emails for a specific account"""
         try:
-            emails = self.gmail.get_recent_emails(hours=settings.email_lookback_hours)
+            emails = client.get_recent_emails(hours=settings.email_lookback_hours)
             return emails, None
         except Exception as e:
             return None, str(e)
 
-    def _fetch_calendar(self) -> tuple[Optional[list[CalendarEvent]], Optional[str]]:
+    def _fetch_calendar_for_account(
+        self,
+        client: CalendarClient,
+        account_email: str
+    ) -> tuple[Optional[list[CalendarEvent]], Optional[str]]:
+        """Fetch calendar events for a specific account"""
         try:
-            events = self.calendar.get_today_events()
+            events = client.get_today_events()
             return events, None
         except Exception as e:
             return None, str(e)
